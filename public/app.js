@@ -129,8 +129,8 @@ class DrawingApp {
             
             const newScale = Math.min(Math.max(
                 this.scale * (currentDistance / this.initialPinchDistance),
-                0.5
-            ), 3.0);
+                0.1
+            ), 10.0);
             
             // Calculate zoom center
             const rect = this.canvas.getBoundingClientRect();
@@ -164,13 +164,17 @@ class DrawingApp {
     handleWheel(e) {
         if (!e.ctrlKey) return;
         e.preventDefault();
-        
+    
         const rect = this.canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
-        
-        const delta = e.deltaY > 0 ? 0.9 : 1.1;
-        const newScale = Math.min(Math.max(this.scale * delta, 0.5), 3.0);
+    
+        // Adjust this value to control the smoothness of zooming
+        const zoomSensitivity = 0.002; 
+        // Calculate a multiplier based on the delta value
+        const delta = 1 - (e.deltaY * zoomSensitivity);
+    
+        const newScale = Math.min(Math.max(this.scale * delta, 0.1), 10.0);
         
         // Zoom around mouse position
         this.offsetX = mouseX / newScale - (mouseX / this.scale - this.offsetX);
@@ -439,7 +443,7 @@ class DrawingApp {
         e.preventDefault();
         if (!this.isPinching) return;
         
-        const newScale = Math.min(Math.max(this.lastScale * e.scale, 0.5), 3.0);
+        const newScale = Math.min(Math.max(this.lastScale * e.scale, 0.1), 10.0);
         
         // Get the center of the canvas
         const rect = this.canvas.getBoundingClientRect();
