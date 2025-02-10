@@ -27,6 +27,7 @@ class DrawingApp {
         
         // Initialize
         this.setupCanvas();
+        this.loadFromLocalStorage(); // Add this line before other setup
         this.setupWebSocket();
         this.setupEventListeners();
         this.setupToolbar();
@@ -213,6 +214,7 @@ class DrawingApp {
         
         this.drawingOperations.push(op);
         this.redraw();
+        this.saveToLocalStorage(); // Add this line to save after remote changes
     }
 
     setupWebSocket() {
@@ -322,6 +324,7 @@ class DrawingApp {
         
         this.drawingOperations.push(op);
         this.redraw();
+        this.saveToLocalStorage(); // Add this line to save after pointer down
         this.sendPointerEvent('down', pos.x, pos.y, e);
     }
 
@@ -348,6 +351,7 @@ class DrawingApp {
         this.lastY = pos.y;
         
         this.redraw();
+        this.saveToLocalStorage(); // Add this line to save after pointer move
         this.sendPointerEvent('move', pos.x, pos.y, e);
     }
 
@@ -474,6 +478,7 @@ class DrawingApp {
     clearCanvas() {
         this.drawingOperations = [];
         this.redraw();
+        this.saveToLocalStorage(); // Add this line to save after clearing
         
         if (this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify({ action: 'clear' }));
@@ -522,6 +527,28 @@ class DrawingApp {
             this.ctx.globalCompositeOperation = 'destination-out';
         } else {
             this.ctx.globalCompositeOperation = 'source-over';
+        }
+    }
+
+    saveToLocalStorage() {
+        try {
+            localStorage.setItem('inkSync_drawing', JSON.stringify(this.drawingOperations));
+            console.log('[Storage] Drawing saved');
+        } catch (e) {
+            console.error('[Storage] Error saving drawing:', e);
+        }
+    }
+
+    loadFromLocalStorage() {
+        try {
+            const saved = localStorage.getItem('inkSync_drawing');
+            if (saved) {
+                this.drawingOperations = JSON.parse(saved);
+                console.log('[Storage] Drawing loaded');
+                this.redraw();
+            }
+        } catch (e) {
+            console.error('[Storage] Error loading drawing:', e);
         }
     }
 }
