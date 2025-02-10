@@ -23,6 +23,7 @@ class DrawingApp {
         this.isMousePanning = false;
         this.lastMouseX = 0;
         this.lastMouseY = 0;
+        this.isSpacebarDown = false;
         
         // Initialize
         this.setupCanvas();
@@ -294,6 +295,10 @@ class DrawingApp {
         
         // Add mouse wheel zoom support
         this.canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+
+        // Add keyboard events for spacebar
+        window.addEventListener('keydown', this.handleKeyDown.bind(this));
+        window.addEventListener('keyup', this.handleKeyUp.bind(this));
     }
 
     handlePointerDown(e) {
@@ -414,8 +419,8 @@ class DrawingApp {
     }
 
     handleMouseDown(e) {
-        // Only handle regular mouse drag (not pen input) and middle mouse button or spacebar + left click
-        if (e.pointerType === 'pen' || (e.button !== 1 && !(e.button === 0 && e.getModifierState('Space')))) return;
+        // Handle middle mouse button or spacebar + left click
+        if (e.pointerType === 'pen' || (e.button !== 1 && !(this.isSpacebarDown && e.button === 0))) return;
         e.preventDefault();
         
         this.isMousePanning = true;
@@ -446,6 +451,24 @@ class DrawingApp {
         
         this.isMousePanning = false;
         this.canvas.style.cursor = 'default';
+    }
+
+    handleKeyDown(e) {
+        if (e.code === 'Space' && !e.repeat) {
+            this.isSpacebarDown = true;
+            if (!this.isDrawing) {
+                this.canvas.style.cursor = 'grab';
+            }
+        }
+    }
+
+    handleKeyUp(e) {
+        if (e.code === 'Space') {
+            this.isSpacebarDown = false;
+            if (!this.isMousePanning) {
+                this.canvas.style.cursor = 'default';
+            }
+        }
     }
 
     clearCanvas() {
