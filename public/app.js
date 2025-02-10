@@ -20,6 +20,9 @@ class DrawingApp {
         this.isPanning = false;
         this.lastScale = 1;
         this.isPinching = false;
+        this.isMousePanning = false;
+        this.lastMouseX = 0;
+        this.lastMouseY = 0;
         
         // Initialize
         this.setupCanvas();
@@ -283,6 +286,12 @@ class DrawingApp {
         this.canvas.addEventListener('pointerup', this.handlePointerUp.bind(this));
         this.canvas.addEventListener('pointercancel', this.handlePointerUp.bind(this));
         
+        // Add mouse events for panning
+        this.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
+        this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
+        this.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
+        this.canvas.addEventListener('mouseleave', this.handleMouseUp.bind(this));
+        
         // Add mouse wheel zoom support
         this.canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
@@ -402,6 +411,41 @@ class DrawingApp {
     handleGestureEnd(e) {
         e.preventDefault();
         this.isPinching = false;
+    }
+
+    handleMouseDown(e) {
+        // Only handle regular mouse drag (not pen input) and middle mouse button or spacebar + left click
+        if (e.pointerType === 'pen' || (e.button !== 1 && !(e.button === 0 && e.getModifierState('Space')))) return;
+        e.preventDefault();
+        
+        this.isMousePanning = true;
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+        this.canvas.style.cursor = 'grabbing';
+    }
+
+    handleMouseMove(e) {
+        if (!this.isMousePanning) return;
+        e.preventDefault();
+        
+        const deltaX = e.clientX - this.lastMouseX;
+        const deltaY = e.clientY - this.lastMouseY;
+        
+        this.offsetX -= deltaX / this.scale;
+        this.offsetY -= deltaY / this.scale;
+        
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+        
+        this.redraw();
+    }
+
+    handleMouseUp(e) {
+        if (!this.isMousePanning) return;
+        e.preventDefault();
+        
+        this.isMousePanning = false;
+        this.canvas.style.cursor = 'default';
     }
 
     clearCanvas() {
