@@ -1,9 +1,19 @@
+/**
+ * InkSync Server
+ * Handles WebSocket connections for real-time drawing synchronization between clients
+ * and serves static files for the web application.
+ */
+
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const path = require('path');
 const os = require('os');
 
-// Function to get local IP address
+/**
+ * Retrieves the local IP address of the machine.
+ * Used to display the access URL for mobile devices on the same network.
+ * @returns {string} The first non-internal IPv4 address found, or '0.0.0.0' if none found
+ */
 function getLocalIpAddress() {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
@@ -17,12 +27,12 @@ function getLocalIpAddress() {
     return '0.0.0.0';
 }
 
-// Express setup for serving static files
+// Express server setup
 const app = express();
 app.use(express.static('public'));
 
-// Create HTTP server
-const HOST = '0.0.0.0';
+// HTTP server configuration
+const HOST = '0.0.0.0';  // Listen on all network interfaces
 const PORT = process.env.PORT || 8080;
 const server = app.listen(PORT, HOST, () => {
     const localIp = getLocalIpAddress();
@@ -30,24 +40,30 @@ const server = app.listen(PORT, HOST, () => {
     console.log(`Access from mobile device using: http://${localIp}:${PORT}`);
 });
 
-// WebSocket server setup
+// WebSocket server initialization
 const wss = new WebSocketServer({ server });
 
-// Track connected clients
+/**
+ * Set to track all connected WebSocket clients
+ * Each client is assigned a unique ID for logging and management
+ */
 const clients = new Set();
 
+// WebSocket connection handler
 wss.on('connection', (ws, req) => {
+    // Generate unique client ID and add to active clients
     const clientId = Math.random().toString(36).substr(2, 9);
     ws.id = clientId;
     clients.add(ws);
     console.log(`[WebSocket] Client ${clientId} connected from ${req.socket.remoteAddress}. Total clients: ${clients.size}`);
 
+    // Handle incoming messages from clients
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
             console.log(`[WebSocket] Client ${clientId} sent ${data.action} action`);
             
-            // Broadcast to all other clients
+            // Broadcast the message to all other connected clients
             let broadcast = 0;
             clients.forEach(client => {
                 if (client !== ws && client.readyState === ws.OPEN) {
@@ -57,7 +73,7 @@ wss.on('connection', (ws, req) => {
                         console.log(`[WebSocket] Message forwarded to client ${client.id}`);
                     } catch (err) {
                         console.error(`[WebSocket] Error sending to client ${client.id}:`, err);
-                        clients.delete(client);
+                        clients.delete(client);  // Remove client if message fails
                     }
                 }
             });
@@ -68,16 +84,18 @@ wss.on('connection', (ws, req) => {
         }
     });
 
+    // Error handler for client connections
     ws.on('error', (error) => {
         console.error(`[WebSocket] Error from client ${clientId}:`, error);
     });
 
+    // Cleanup handler when client disconnects
     ws.on('close', () => {
         clients.delete(ws);
         console.log(`[WebSocket] Client ${clientId} disconnected. Total clients: ${clients.size}`);
     });
 
-    // Send initial connection acknowledgment
+    // Send initial connection acknowledgment to the client
     try {
         ws.send(JSON.stringify({ action: 'connected', clientId }));
     } catch (err) {
@@ -85,7 +103,10 @@ wss.on('connection', (ws, req) => {
     }
 });
 
-// Periodic check for stale connections
+/**
+ * Periodic cleanup of stale connections
+ * Runs every 30 seconds to remove any closed or closing connections
+ */
 setInterval(() => {
     clients.forEach(client => {
         if (client.readyState === WebSocketServer.CLOSING || client.readyState === WebSocketServer.CLOSED) {

@@ -3,9 +3,14 @@ import { WebSocketManager } from './src/WebSocketManager.js';
 import { DrawingHistory } from './src/DrawingHistory.js';
 import { ToolbarManager } from './src/ToolbarManager.js';
 
+/**
+ * DrawingApp Class
+ * Main application controller that coordinates all components
+ * Handles drawing state, event routing, and data persistence
+ */
 class DrawingApp {
     constructor() {
-        // Drawing state
+        // Application state
         this.isDrawing = false;
         this.isErasing = false;
         this.eraserSize = 20;
@@ -13,12 +18,15 @@ class DrawingApp {
         this.lastX = 0;
         this.lastY = 0;
 
-        // Initialize components
         this.setupComponents();
         this.loadFromLocalStorage();
         this.setupEventListeners();
     }
 
+    /**
+     * Initializes all component classes and their interactions
+     * Sets up Canvas, WebSocket, History, and Toolbar managers
+     */
     setupComponents() {
         const canvas = document.getElementById('drawingCanvas');
         const statusEl = document.getElementById('status');
@@ -49,6 +57,10 @@ class DrawingApp {
         });
     }
 
+    /**
+     * Handles pen/stylus down events to start drawing
+     * @param {PointerEvent} e - The pointer event
+     */
     handlePointerDown(e) {
         if (e.pointerType !== 'pen') return;
         e.preventDefault();
@@ -75,6 +87,10 @@ class DrawingApp {
         this.sendPointerEvent('down', pos.x, pos.y, e);
     }
 
+    /**
+     * Processes pen/stylus movement for drawing strokes
+     * @param {PointerEvent} e - The pointer event
+     */
     handlePointerMove(e) {
         if (!this.isDrawing || e.pointerType !== 'pen') return;
         e.preventDefault();
@@ -100,6 +116,10 @@ class DrawingApp {
         this.sendPointerEvent('move', pos.x, pos.y, e);
     }
 
+    /**
+     * Handles pen/stylus up events to end drawing
+     * @param {PointerEvent} e - The pointer event
+     */
     handlePointerUp(e) {
         if (e.pointerType !== 'pen') return;
         this.isDrawing = false;
@@ -110,6 +130,11 @@ class DrawingApp {
         this.updateUndoRedoButtons();
     }
 
+    /**
+     * Processes drawing actions received from other clients
+     * Handles synchronization of clear, undo, redo, and drawing operations
+     * @param {Object} data - The received WebSocket message data
+     */
     handleRemoteDrawing(data) {
         if (data.action === 'clear') {
             this.drawingOperations = [];
@@ -156,6 +181,13 @@ class DrawingApp {
         }
     }
 
+    /**
+     * Sends drawing actions to other clients via WebSocket
+     * @param {string} action - The type of pointer action (down/move/up)
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @param {PointerEvent} e - The original pointer event
+     */
     sendPointerEvent(action, x, y, e) {
         if (!this.webSocket.isConnected()) return;
 
@@ -174,11 +206,18 @@ class DrawingApp {
         this.webSocket.send(pointerData);
     }
 
+    /**
+     * Switches between pen and eraser tools
+     * @param {string} tool - The tool to activate ('pen' or 'eraser')
+     */
     setTool(tool) {
         this.isErasing = tool === 'eraser';
         this.toolbar.setTool(tool);
     }
 
+    /**
+     * Clears the entire canvas and notifies other clients
+     */
     clearCanvas() {
         this.drawingOperations = [];
         this.redraw();
@@ -191,6 +230,9 @@ class DrawingApp {
         }
     }
 
+    /**
+     * Performs undo operation and synchronizes with other clients
+     */
     undo() {
         const operations = this.history.undo(this.drawingOperations);
         if (operations) {
@@ -204,6 +246,9 @@ class DrawingApp {
         }
     }
 
+    /**
+     * Performs redo operation and synchronizes with other clients
+     */
     redo() {
         const operations = this.history.redo(this.drawingOperations);
         if (operations) {
@@ -217,10 +262,16 @@ class DrawingApp {
         }
     }
 
+    /**
+     * Triggers canvas redraw with current operations
+     */
     redraw() {
         this.canvasView.redraw(this.drawingOperations);
     }
 
+    /**
+     * Updates UI state of undo/redo buttons
+     */
     updateUndoRedoButtons() {
         this.toolbar.updateUndoRedoButtons(
             this.history.canUndo(),
@@ -228,6 +279,9 @@ class DrawingApp {
         );
     }
 
+    /**
+     * Persists current drawing state to localStorage
+     */
     saveToLocalStorage() {
         try {
             localStorage.setItem('inkSync_drawing', JSON.stringify(this.drawingOperations));
@@ -237,6 +291,9 @@ class DrawingApp {
         }
     }
 
+    /**
+     * Restores drawing state from localStorage
+     */
     loadFromLocalStorage() {
         try {
             const saved = localStorage.getItem('inkSync_drawing');
@@ -250,6 +307,10 @@ class DrawingApp {
         }
     }
 
+    /**
+     * Sets up global event listeners for keyboard shortcuts
+     * and drawing input
+     */
     setupEventListeners() {
         const canvas = this.canvasView.canvas;
 

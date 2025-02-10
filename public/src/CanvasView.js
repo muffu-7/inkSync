@@ -1,14 +1,25 @@
+/**
+ * CanvasView Class
+ * Handles canvas rendering, zoom/pan interactions, and input device management
+ * Optimized for stylus input while supporting touch and mouse interactions
+ */
 export class CanvasView {
+    /**
+     * @param {HTMLCanvasElement} canvas - The canvas element to draw on
+     * @param {Function} onDraw - Callback function triggered when canvas needs redrawing
+     */
     constructor(canvas, onDraw) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.onDraw = onDraw;
         this.setupCanvas();
         
-        // View state
+        // View transformation state
         this.scale = 1;
         this.offsetX = 0;
         this.offsetY = 0;
+
+        // Input state tracking
         this.isPanning = false;
         this.isPinching = false;
         this.isMousePanning = false;
@@ -18,14 +29,9 @@ export class CanvasView {
         this.lastTouchY = 0;
         this.lastMouseX = 0;
         this.lastMouseY = 0;
-
-        // Add flag to track if we're currently using the pen
         this.isPenActive = false;
-
-        // Add pointer types tracking
         this.activePointerTypes = new Set();
 
-        // Set up all event listeners
         this.setupEventListeners();
     }
 
@@ -74,6 +80,11 @@ export class CanvasView {
         this.canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
 
+    /**
+     * Converts viewport coordinates to canvas coordinates accounting for zoom and pan
+     * @param {PointerEvent} e - The pointer event containing client coordinates
+     * @returns {Object} Object containing transformed x and y coordinates
+     */
     getPointerPosition(e) {
         const rect = this.canvas.getBoundingClientRect();
         const x = ((e.clientX - rect.left) / this.scale) + this.offsetX;
@@ -84,6 +95,11 @@ export class CanvasView {
         };
     }
 
+    /**
+     * Redraws the canvas with all drawing operations
+     * Applies current view transformation (scale and offset)
+     * @param {Array} operations - List of drawing operations to render
+     */
     redraw(operations = []) {
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -111,12 +127,20 @@ export class CanvasView {
         });
     }
 
+    /**
+     * Handles Safari-specific gesture events for pinch-zoom
+     * @param {GestureEvent} e - The gesture event
+     */
     handleGestureStart(e) {
         e.preventDefault();
         this.isPinching = true;
         this.lastScale = this.scale;
     }
 
+    /**
+     * Updates scale and position during gesture events
+     * @param {GestureEvent} e - The gesture event
+     */
     handleGestureChange(e) {
         e.preventDefault();
         if (!this.isPinching) return;
@@ -130,11 +154,20 @@ export class CanvasView {
         this.setNewScale(newScale, centerX, centerY);
     }
 
+    /**
+     * Handles the end of gesture events
+     * @param {GestureEvent} e - The gesture event
+     */
     handleGestureEnd(e) {
         e.preventDefault();
         this.isPinching = false;
     }
 
+    /**
+     * Handles mouse wheel events for zooming
+     * Only responds to wheel events with Ctrl key pressed
+     * @param {WheelEvent} e - The wheel event
+     */
     handleWheel(e) {
         if (!e.ctrlKey) return;
         e.preventDefault();
@@ -149,6 +182,12 @@ export class CanvasView {
         this.setNewScale(newScale, mouseX, mouseY);
     }
 
+    /**
+     * Updates canvas scale while maintaining the zoom center point
+     * @param {number} newScale - The new zoom scale to apply
+     * @param {number} centerX - X coordinate of zoom center
+     * @param {number} centerY - Y coordinate of zoom center
+     */
     setNewScale(newScale, centerX, centerY) {
         const zoomOriginX = centerX / this.scale + this.offsetX;
         const zoomOriginY = centerY / this.scale + this.offsetY;
@@ -158,6 +197,11 @@ export class CanvasView {
         this.onDraw();
     }
 
+    /**
+     * Handles touch start events for panning and pinch-zoom
+     * Disabled when pen is active to prevent interference
+     * @param {TouchEvent} e - The touch event
+     */
     handleTouchStart(e) {
         // Completely prevent touch handling if any pen pointer is active
         if (this.activePointerTypes.has('pen')) {
@@ -179,6 +223,10 @@ export class CanvasView {
         }
     }
 
+    /**
+     * Processes touch move events for panning and pinch-zoom
+     * @param {TouchEvent} e - The touch event
+     */
     handleTouchMove(e) {
         // Completely prevent touch handling if any pen pointer is active
         if (this.activePointerTypes.has('pen')) {
@@ -216,6 +264,10 @@ export class CanvasView {
         }
     }
 
+    /**
+     * Handles the end of touch interactions
+     * @param {TouchEvent} e - The touch event
+     */
     handleTouchEnd(e) {
         // Completely prevent touch handling if any pen pointer is active
         if (this.activePointerTypes.has('pen')) {
@@ -232,6 +284,11 @@ export class CanvasView {
         this.initialPinchDistance = 0;
     }
 
+    /**
+     * Initiates mouse-based panning
+     * Only responds to middle mouse button or left click with spacebar
+     * @param {MouseEvent} e - The mouse event
+     */
     handleMouseDown(e) {
         // Don't handle mouse events if pen is active
         if (this.isPenActive) return;
@@ -244,6 +301,10 @@ export class CanvasView {
         this.canvas.style.cursor = 'grabbing';
     }
 
+    /**
+     * Updates view position during mouse panning
+     * @param {MouseEvent} e - The mouse event
+     */
     handleMouseMove(e) {
         // Don't handle mouse events if pen is active
         if (this.isPenActive) return;
@@ -253,6 +314,10 @@ export class CanvasView {
         this.handlePanMove(e.clientX, e.clientY);
     }
 
+    /**
+     * Ends mouse-based panning
+     * @param {MouseEvent} e - The mouse event
+     */
     handleMouseUp(e) {
         // Don't handle mouse events if pen is active
         if (this.isPenActive) return;
@@ -263,6 +328,11 @@ export class CanvasView {
         this.canvas.style.cursor = this.isSpacebarDown ? 'grab' : 'default';
     }
 
+    /**
+     * Common handler for both touch and mouse panning
+     * @param {number} currentX - Current X position
+     * @param {number} currentY - Current Y position
+     */
     handlePanMove(currentX, currentY) {
         const lastX = this.isPanning ? this.lastTouchX : this.lastMouseX;
         const lastY = this.isPanning ? this.lastTouchY : this.lastMouseY;
@@ -283,6 +353,10 @@ export class CanvasView {
         this.onDraw();
     }
 
+    /**
+     * Updates cursor style based on spacebar state
+     * @param {boolean} isDown - Whether spacebar is pressed
+     */
     setSpacebarState(isDown) {
         // Don't change cursor if pen is active
         if (this.isPenActive) return;
@@ -293,11 +367,18 @@ export class CanvasView {
         }
     }
 
-    // Track pointer types
+    /**
+     * Tracks active pointer types to manage input priority
+     * @param {PointerEvent} e - The pointer event
+     */
     handlePointerDown(e) {
         this.activePointerTypes.add(e.pointerType);
     }
 
+    /**
+     * Removes pointer type from tracking when pointer is released
+     * @param {PointerEvent} e - The pointer event
+     */
     handlePointerUp(e) {
         this.activePointerTypes.delete(e.pointerType);
     }
