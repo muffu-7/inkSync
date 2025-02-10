@@ -26,11 +26,18 @@
             bottom: 0;
             overflow: hidden;
             touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
             width: 100vw;
             height: 100vh;
         }
         canvas { 
             touch-action: none;
+            -ms-touch-action: none;
             background: white;
             position: absolute;
             top: 0;
@@ -111,6 +118,6 @@
         <canvas id="drawingCanvas"></canvas>
     </div>
     <div id="status" class="status">Disconnected</div>
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
 </body>
 </html>
