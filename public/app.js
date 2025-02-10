@@ -25,6 +25,11 @@ class DrawingApp {
         this.lastMouseY = 0;
         this.isSpacebarDown = false;
         
+        // History state
+        this.undoStack = [];
+        this.redoStack = [];
+        this.isUndoRedo = false; // Flag to prevent saving undo state during undo/redo operations
+
         // Initialize
         this.setupCanvas();
         this.loadFromLocalStorage(); // Add this line before other setup
@@ -32,6 +37,9 @@ class DrawingApp {
         this.setupEventListeners();
         this.setupToolbar();
         this.activeConnections = new Map(); // Track active drawing connections
+
+        // Save initial state
+        this.saveToHistory();
     }
 
     setupCanvas() {
@@ -199,6 +207,17 @@ class DrawingApp {
         if (data.action === 'clear') {
             this.drawingOperations = [];
             this.redraw();
+            this.saveToHistory();
+            return;
+        }
+
+        if (data.action === 'undo') {
+            this.performUndo(false); // false means don't broadcast
+            return;
+        }
+
+        if (data.action === 'redo') {
+            this.performRedo(false); // false means don't broadcast
             return;
         }
         
@@ -214,7 +233,12 @@ class DrawingApp {
         
         this.drawingOperations.push(op);
         this.redraw();
-        this.saveToLocalStorage(); // Add this line to save after remote changes
+        this.saveToLocalStorage();
+        
+        // Only save to history if it's a complete stroke (pointerup)
+        if (data.action === 'up') {
+            this.saveToHistory();
+        }
     }
 
     setupWebSocket() {
@@ -301,6 +325,18 @@ class DrawingApp {
         // Add keyboard events for spacebar
         window.addEventListener('keydown', this.handleKeyDown.bind(this));
         window.addEventListener('keyup', this.handleKeyUp.bind(this));
+
+        // Add keyboard shortcuts for undo/redo
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    this.redo();
+                } else {
+                    this.undo();
+                }
+            }
+        });
     }
 
     handlePointerDown(e) {
@@ -360,6 +396,12 @@ class DrawingApp {
         this.isDrawing = false;
         const pos = this.getPointerPosition(e);
         this.sendPointerEvent('up', pos.x, pos.y, e);
+        
+        // Save to history after completing a stroke
+        if (!this.isUndoRedo) {
+            this.saveToHistory();
+            this.redoStack = []; // Clear redo stack when new action is performed
+        }
     }
 
     handleTouchStart(e) {
@@ -479,6 +521,7 @@ class DrawingApp {
         this.drawingOperations = [];
         this.redraw();
         this.saveToLocalStorage(); // Add this line to save after clearing
+        this.saveToHistory();
         
         if (this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify({ action: 'clear' }));
@@ -489,6 +532,8 @@ class DrawingApp {
         const toolbar = document.createElement('div');
         toolbar.className = 'toolbar';
         toolbar.innerHTML = `
+            <button id="undoTool" disabled>Undo</button>
+            <button id="redoTool" disabled>Redo</button>
             <button id="penTool" class="active">Pen</button>
             <button id="eraserTool">Eraser</button>
             <button id="clearTool">Clear All</button>
@@ -503,6 +548,8 @@ class DrawingApp {
         this.penButton = document.getElementById('penTool');
         this.eraserButton = document.getElementById('eraserTool');
         this.clearButton = document.getElementById('clearTool');
+        this.undoButton = document.getElementById('undoTool');
+        this.redoButton = document.getElementById('redoTool');
         this.sizeControl = document.getElementById('sizeControl');
         this.sizeSlider = document.getElementById('sizeSlider');
         this.sizeValue = document.getElementById('sizeValue');
@@ -510,6 +557,8 @@ class DrawingApp {
         this.penButton.onclick = () => this.setTool('pen');
         this.eraserButton.onclick = () => this.setTool('eraser');
         this.clearButton.onclick = () => this.clearCanvas();
+        this.undoButton.onclick = () => this.undo();
+        this.redoButton.onclick = () => this.redo();
         
         this.sizeSlider.oninput = (e) => {
             this.eraserSize = parseInt(e.target.value);
@@ -550,6 +599,76 @@ class DrawingApp {
         } catch (e) {
             console.error('[Storage] Error loading drawing:', e);
         }
+    }
+
+    saveToHistory() {
+        // Save current state to undo stack
+        this.undoStack.push([...this.drawingOperations]);
+        
+        // Limit stack size to prevent memory issues
+        if (this.undoStack.length > 50) {
+            this.undoStack.shift();
+        }
+        
+        // Update button states
+        this.updateUndoRedoButtons();
+    }
+
+    undo() {
+        this.performUndo(true); // true means broadcast
+    }
+
+    redo() {
+        this.performRedo(true); // true means broadcast
+    }
+
+    performUndo(broadcast = true) {
+        if (this.undoStack.length > 0) {
+            // Save current state to redo stack
+            this.redoStack.push([...this.drawingOperations]);
+            
+            // Pop and apply previous state
+            this.isUndoRedo = true;
+            this.drawingOperations = this.undoStack.pop();
+            this.redraw();
+            this.saveToLocalStorage();
+            this.isUndoRedo = false;
+            
+            // Update button states
+            this.updateUndoRedoButtons();
+
+            // Broadcast undo action if needed
+            if (broadcast && this.socket.readyState === WebSocket.OPEN) {
+                this.socket.send(JSON.stringify({ action: 'undo' }));
+            }
+        }
+    }
+
+    performRedo(broadcast = true) {
+        if (this.redoStack.length > 0) {
+            // Save current state to undo stack
+            this.undoStack.push([...this.drawingOperations]);
+            
+            // Pop and apply next state
+            this.isUndoRedo = true;
+            this.drawingOperations = this.redoStack.pop();
+            this.redraw();
+            this.saveToLocalStorage();
+            this.isUndoRedo = false;
+            
+            // Update button states
+            this.updateUndoRedoButtons();
+
+            // Broadcast redo action if needed
+            if (broadcast && this.socket.readyState === WebSocket.OPEN) {
+                this.socket.send(JSON.stringify({ action: 'redo' }));
+            }
+        }
+    }
+
+    updateUndoRedoButtons() {
+        this.undoButton.disabled = this.undoStack.length === 0;
+        this.redoButton.disabled = this.redoStack.length === 0;
     }
 }
 
