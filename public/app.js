@@ -21,6 +21,7 @@ class DrawingApp {
         this.drawings = {}; // Format: { id: { name: string, operations: array } }
         this.isInitialized = false; // Add flag to track initialization
         this.currentPenColor = '#000000'; // Default pen color
+        this.currentTool = 'pen'; // Default tool
 
         this.setupComponents();
         this.setupDrawingNameDisplay();
@@ -65,7 +66,8 @@ class DrawingApp {
             onColorChange: (color) => this.currentPenColor = color, // Bind color change
             onNewDrawingClick: () => this.createNewDrawing(),
             onSaveDrawingClick: () => this.saveCurrentDrawing(),
-            onOpenDrawingClick: () => this.openDrawing()
+            onOpenDrawingClick: () => this.openDrawing(),
+            onToolSelect: (tool) => this.setTool(tool) // Bind tool selection
         });
     }
 
@@ -95,18 +97,23 @@ class DrawingApp {
         this.lastX = pos.x;
         this.lastY = pos.y;
         
-        const op = {
-            action: 'down',
-            x: pos.x,
-            y: pos.y,
-            pressure: e.pressure,
-            isErasing: this.isErasing,
-            eraserSize: this.eraserSize,
-            pointerId: e.pointerId,
-            color: this.currentPenColor // Include pen color
-        };
+        if (this.currentTool === 'pen') {
+            const op = {
+                action: 'down',
+                x: pos.x,
+                y: pos.y,
+                pressure: e.pressure,
+                isErasing: this.isErasing,
+                eraserSize: this.eraserSize,
+                pointerId: e.pointerId,
+                color: this.currentPenColor // Include pen color
+            };
+            this.drawingOperations.push(op);
+        } else if (this.currentTool === 'rectangle' || this.currentTool === 'ellipse' || this.currentTool === 'circle') {
+            this.shapeStartX = pos.x;
+            this.shapeStartY = pos.y;
+        }
         
-        this.drawingOperations.push(op);
         this.redraw();
         this.saveToLocalStorage();
         this.sendPointerEvent('down', pos.x, pos.y, e);
@@ -126,20 +133,27 @@ class DrawingApp {
         e.preventDefault();
         
         const pos = this.canvasView.getPointerPosition(e);
-        const op = {
-            action: 'move',
-            x: pos.x,
-            y: pos.y,
-            prevX: this.lastX,
-            prevY: this.lastY,
-            pressure: e.pressure,
-            isErasing: this.isErasing,
-            eraserSize: this.eraserSize,
-            pointerId: e.pointerId,
-            color: this.currentPenColor // Include pen color
-        };
-
-        this.drawingOperations.push(op);
+        
+        if (this.currentTool === 'pen') {
+            const op = {
+                action: 'move',
+                x: pos.x,
+                y: pos.y,
+                prevX: this.lastX,
+                prevY: this.lastY,
+                pressure: e.pressure,
+                isErasing: this.isErasing,
+                eraserSize: this.eraserSize,
+                pointerId: e.pointerId,
+                color: this.currentPenColor // Include pen color
+            };
+            this.drawingOperations.push(op);
+        } else if (this.currentTool === 'rectangle' || this.currentTool === 'ellipse' || this.currentTool === 'circle') {
+            this.shapeEndX = pos.x;
+            this.shapeEndY = pos.y;
+            this.redraw();
+        }
+        
         this.lastX = pos.x;
         this.lastY = pos.y;
         this.redraw();
@@ -167,6 +181,23 @@ class DrawingApp {
         this.isDrawing = false;
         this.canvasView.isPenActive = false;
         const pos = this.canvasView.getPointerPosition(e);
+        
+        if (this.currentTool === 'rectangle' || this.currentTool === 'ellipse' || this.currentTool === 'circle') {
+            const shapeOp = {
+                action: 'shape',
+                shape: this.currentTool,
+                startX: this.shapeStartX,
+                startY: this.shapeStartY,
+                endX: this.shapeEndX,
+                endY: this.shapeEndY,
+                color: this.currentPenColor
+            };
+            this.drawingOperations.push(shapeOp);
+            this.redraw();
+            this.saveToLocalStorage();
+            this.sendPointerEvent('shape', this.shapeEndX, this.shapeEndY, e);
+        }
+        
         this.sendPointerEvent('up', pos.x, pos.y, e);
         this.history.saveState(this.drawingOperations);
         this.updateUndoRedoButtons();
@@ -392,6 +423,7 @@ class DrawingApp {
      * @param {string} tool - The tool to activate ('pen' or 'eraser')
      */
     setTool(tool) {
+        this.currentTool = tool;
         this.isErasing = tool === 'eraser';
         this.toolbar.setTool(tool);
     }
@@ -448,6 +480,25 @@ class DrawingApp {
      */
     redraw() {
         this.canvasView.redraw(this.drawingOperations);
+        if (this.currentTool === 'rectangle' || this.currentTool === 'ellipse' || this.currentTool === 'circle') {
+            this.drawShape(this.shapeStartX, this.shapeStartY, this.shapeEndX, this.shapeEndY, this.currentTool);
+        }
+    }
+
+    drawShape(startX, startY, endX, endY, shape) {
+        const ctx = this.canvasView.ctx;
+        ctx.strokeStyle = this.currentPenColor;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (shape === 'rectangle') {
+            ctx.rect(startX, startY, endX - startX, endY - startY);
+        } else if (shape === 'ellipse') {
+            ctx.ellipse((startX + endX) / 2, (startY + endY) / 2, Math.abs(endX - startX) / 2, Math.abs(endY - startY) / 2, 0, 0, 2 * Math.PI);
+        } else if (shape === 'circle') {
+            const radius = Math.max(Math.abs(endX - startX), Math.abs(endY - startY)) / 2;
+            ctx.arc((startX + endX) / 2, (startY + endY) / 2, radius, 0, 2 * Math.PI);
+        }
+        ctx.stroke();
     }
 
     /**

@@ -16,6 +16,7 @@ export class ToolbarManager {
      * @param {Function} options.onSaveDrawingClick - Handler for save drawing action
      * @param {Function} options.onOpenDrawingClick - Handler for open drawing action
      * @param {Function} options.onColorChange - Handler for color change action
+     * @param {Function} options.onToolSelect - Handler for tool selection action
      */
     constructor(options) {
         this.options = options;
@@ -28,62 +29,32 @@ export class ToolbarManager {
      */
     setupToolbar() {
         const toolbar = document.createElement('div');
-        toolbar.className = 'toolbar';
-        
-        // Enable smooth scrolling for the toolbar
-        let isToolbarScrolling = false;
-        let startX = 0;
-        let scrollLeft = 0;
-
-        toolbar.addEventListener('touchstart', (e) => {
-            isToolbarScrolling = true;
-            startX = e.touches[0].pageX - toolbar.offsetLeft;
-            scrollLeft = toolbar.scrollLeft;
-            toolbar.style.scrollBehavior = 'auto';
-        }, { passive: true });
-
-        toolbar.addEventListener('touchmove', (e) => {
-            if (!isToolbarScrolling) return;
-            e.stopPropagation();
-            const x = e.touches[0].pageX - toolbar.offsetLeft;
-            const delta = x - startX;
-            toolbar.scrollLeft = scrollLeft - delta;
-        }, { passive: true });
-
-        toolbar.addEventListener('touchend', () => {
-            isToolbarScrolling = false;
-            toolbar.style.scrollBehavior = 'smooth';
-        }, { passive: true });
-
-        // Prevent toolbar interactions from affecting canvas
-        toolbar.addEventListener('touchcancel', () => {
-            isToolbarScrolling = false;
-            toolbar.style.scrollBehavior = 'smooth';
-        }, { passive: true });
-        
-        // Prevent toolbar interactions from affecting canvas
-        toolbar.addEventListener('touchstart', (e) => e.stopPropagation());
-        toolbar.addEventListener('touchmove', (e) => e.stopPropagation());
-        toolbar.addEventListener('touchend', (e) => e.stopPropagation());
-        
-        // Prevent scroll momentum from affecting the canvas
-        toolbar.addEventListener('scroll', (e) => e.stopPropagation());
-        
+        toolbar.classList.add('toolbar-container');
         toolbar.innerHTML = `
-            <button id="undoTool" disabled>Undo</button>
-            <button id="redoTool" disabled>Redo</button>
-            <button id="penTool" class="active">Pen</button>
-            <button id="eraserTool">Eraser</button>
-            <button id="clearTool">Clear All</button>
-            <div id="sizeControl" class="size-control hidden">
-                <span>Size:</span>
-                <input type="range" id="sizeSlider" min="5" max="50" value="20">
-                <span id="sizeValue" class="size-value">20</span>
+            <div class="toolbar-actions">
+                <button id="undoTool" disabled>Undo</button>
+                <button id="redoTool" disabled>Redo</button>
+                <button id="penTool" class="active">Pen</button>
+                <button id="eraserTool">Eraser</button>
+                <button id="clearTool">Clear All</button>
+                <div id="sizeControl" class="size-control hidden">
+                    <span>Size:</span>
+                    <input type="range" id="sizeSlider" min="5" max="50" value="20">
+                    <span id="sizeValue" class="size-value">20</span>
+                </div>
+                <input type="color" id="colorPicker" value="#000000" title="Choose pen color">
+                <button id="newDrawing">New Drawing</button>
+                <button id="saveDrawing">Save Drawing</button>
+                <button id="openDrawing">Open Drawing</button>
             </div>
-            <input type="color" id="colorPicker" value="#000000" title="Choose pen color">
-            <button id="newDrawing">New Drawing</button>
-            <button id="saveDrawing">Save Drawing</button>
-            <button id="openDrawing">Open Drawing</button>
+            <!-- New vertical object selector -->
+            <div class="object-selector">
+                <h4>Select Tool</h4>
+                <button class="object-tool" data-tool="pen">Pen</button>
+                <button class="object-tool" data-tool="rectangle">Rectangle</button>
+                <button class="object-tool" data-tool="ellipse">Ellipse</button>
+                <button class="object-tool" data-tool="circle">Circle</button>
+            </div>
         `;
         document.body.appendChild(toolbar);
 
@@ -99,7 +70,8 @@ export class ToolbarManager {
             colorPicker: document.getElementById('colorPicker'),
             newDrawingButton: document.getElementById('newDrawing'),
             saveDrawingButton: document.getElementById('saveDrawing'),
-            openDrawingButton: document.getElementById('openDrawing')
+            openDrawingButton: document.getElementById('openDrawing'),
+            objectTools: Array.from(toolbar.querySelectorAll('.object-tool'))
         };
 
         this.bindEvents();
@@ -110,7 +82,7 @@ export class ToolbarManager {
      * Connects UI interactions with the provided callback functions
      */
     bindEvents() {
-        const { onPenClick, onEraserClick, onClearClick, onUndoClick, onRedoClick, onSizeChange, onColorChange, onNewDrawingClick, onSaveDrawingClick, onOpenDrawingClick } = this.options;
+        const { onPenClick, onEraserClick, onClearClick, onUndoClick, onRedoClick, onSizeChange, onColorChange, onNewDrawingClick, onSaveDrawingClick, onOpenDrawingClick, onToolSelect } = this.options;
 
         // Helper function to handle proper tap events
         const bindTapHandler = (element, handler) => {
@@ -189,6 +161,19 @@ export class ToolbarManager {
         this.elements.colorPicker.addEventListener('input', (e) => {
             e.stopPropagation();
             onColorChange(e.target.value);
+        });
+
+        // Bind events for the new object selector buttons
+        this.elements.objectTools.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Update UI active state on object selector
+                this.elements.objectTools.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                // Call a new callback if provided in options (e.g. onToolSelect)
+                if (onToolSelect) {
+                    onToolSelect(btn.dataset.tool);
+                }
+            });
         });
     }
 
