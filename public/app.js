@@ -17,10 +17,17 @@ class DrawingApp {
         this.drawingOperations = [];
         this.lastX = 0;
         this.lastY = 0;
+        this.currentDrawingId = null;
+        this.drawings = {}; // Format: { id: { name: string, operations: array } }
+        this.isInitialized = false; // Add flag to track initialization
 
         this.setupComponents();
         this.loadFromLocalStorage();
         this.setupEventListeners();
+        this.setupDrawingNameDisplay();
+        
+        // Mark as initialized after all setup is complete
+        this.isInitialized = true;
     }
 
     /**
@@ -46,14 +53,17 @@ class DrawingApp {
         // Initialize drawing history
         this.history = new DrawingHistory();
 
-        // Initialize toolbar
+        // Initialize toolbar with all callback handlers
         this.toolbar = new ToolbarManager({
             onPenClick: () => this.setTool('pen'),
             onEraserClick: () => this.setTool('eraser'),
             onClearClick: () => this.clearCanvas(),
             onUndoClick: () => this.undo(),
             onRedoClick: () => this.redo(),
-            onSizeChange: (size) => this.eraserSize = size
+            onSizeChange: (size) => this.eraserSize = size,
+            onNewDrawingClick: () => this.createNewDrawing(),
+            onSaveDrawingClick: () => this.saveCurrentDrawing(),
+            onOpenDrawingClick: () => this.openDrawing()
         });
     }
 
@@ -62,8 +72,20 @@ class DrawingApp {
      * @param {PointerEvent} e - The pointer event
      */
     handlePointerDown(e) {
+        // Check if the event originated from the toolbar
+        if (e.target.closest('.toolbar')) {
+            return;
+        }
+
         if (e.pointerType !== 'pen') return;
         e.preventDefault();
+        
+        // Create new drawing if none exists
+        if (!this.currentDrawingId) {
+            this.createNewDrawing();
+            if (!this.currentDrawingId) return; // User cancelled new drawing creation
+        }
+        
         this.isDrawing = true;
         this.canvasView.isPenActive = true;
         
@@ -92,10 +114,15 @@ class DrawingApp {
      * @param {PointerEvent} e - The pointer event
      */
     handlePointerMove(e) {
+        // Check if the event originated from the toolbar
+        if (e.target.closest('.toolbar')) {
+            return;
+        }
+
         if (!this.isDrawing || e.pointerType !== 'pen') return;
         e.preventDefault();
+        
         const pos = this.canvasView.getPointerPosition(e);
-
         const op = {
             action: 'move',
             x: pos.x,
@@ -112,7 +139,13 @@ class DrawingApp {
         this.lastX = pos.x;
         this.lastY = pos.y;
         this.redraw();
-        this.saveToLocalStorage();
+        
+        // Save after each operation
+        if (this.currentDrawingId) {
+            this.drawings[this.currentDrawingId].operations = [...this.drawingOperations];
+            this.saveToLocalStorage();
+        }
+        
         this.sendPointerEvent('move', pos.x, pos.y, e);
     }
 
@@ -121,6 +154,11 @@ class DrawingApp {
      * @param {PointerEvent} e - The pointer event
      */
     handlePointerUp(e) {
+        // Check if the event originated from the toolbar
+        if (e.target.closest('.toolbar')) {
+            return;
+        }
+
         if (e.pointerType !== 'pen') return;
         this.isDrawing = false;
         this.canvasView.isPenActive = false;
@@ -136,6 +174,81 @@ class DrawingApp {
      * @param {Object} data - The received WebSocket message data
      */
     handleRemoteDrawing(data) {
+        if (data.action === 'requestCurrentState') {
+            if (!this.isInitialized) {
+                setTimeout(() => this.handleRemoteDrawing(data), 100);
+                return;
+            }
+            // Send all drawings to the requesting client
+            const allDrawings = Object.entries(this.drawings).map(([id, drawing]) => ({
+                action: 'saveDrawing',
+                drawingId: id,
+                drawing: drawing
+            }));
+            
+            // Send drawings in sequence with small delays to ensure proper order
+            allDrawings.forEach((drawingData, index) => {
+                setTimeout(() => {
+                    this.webSocket.send(drawingData);
+                }, index * 50);
+            });
+
+            // Then open the current drawing if one exists
+            if (this.currentDrawingId && this.drawings[this.currentDrawingId]) {
+                setTimeout(() => this.broadcastOpen(this.currentDrawingId), 
+                    (allDrawings.length + 1) * 50);
+            }
+            return;
+        }
+
+        if (data.action === 'syncDrawings') {
+            // Merge the received drawings into local state
+            this.drawings = { ...this.drawings, ...data.drawings };
+            this.currentDrawingId = data.currentDrawingId;
+            // (Optionally update UI or call redraw if needed)
+            this.updateDrawingNameDisplay();
+            this.updateUndoRedoButtons();
+            return;
+        }
+
+        if (data.action === 'deleteDrawing') {
+            // Handle remote drawing deletion
+            if (data.drawingId) {
+                const wasCurrentDrawing = this.currentDrawingId === data.drawingId;
+                delete this.drawings[data.drawingId];
+                
+                // If we were viewing the deleted drawing, clear the canvas
+                if (wasCurrentDrawing) {
+                    this.currentDrawingId = null;
+                    this.drawingOperations = [];
+                    this.history.clear();
+                    this.redraw();
+                    this.updateUndoRedoButtons();
+                }
+                
+                // Update storage and UI
+                this.saveToLocalStorage();
+                this.updateDrawingNameDisplay();
+
+                // If the drawings dialog is open, update it
+                const existingDialog = document.querySelector('.drawings-dialog');
+                if (existingDialog) {
+                    const deletedItem = existingDialog.querySelector(`[data-id="${data.drawingId}"]`);
+                    if (deletedItem) {
+                        const container = deletedItem.closest('.drawing-item-container');
+                        if (container) {
+                            container.remove();
+                        }
+                        // If no drawings left, close the dialog
+                        if (Object.keys(this.drawings).length === 0) {
+                            existingDialog.remove();
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
         if (data.action === 'clear') {
             this.drawingOperations = [];
             this.redraw();
@@ -163,6 +276,39 @@ class DrawingApp {
             return;
         }
 
+        if (data.action === 'saveDrawing') {
+            const previousName = this.drawings[data.drawingId]?.name;
+            this.drawings[data.drawingId] = {
+                name: data.drawing.name,
+                operations: [...data.drawing.operations]
+            };
+            
+            // If this is the current drawing or the name changed, update the display
+            if (data.drawingId === this.currentDrawingId || previousName !== data.drawing.name) {
+                this.drawingOperations = [...data.drawing.operations];
+                this.updateDrawingNameDisplay();
+                this.redraw();
+            }
+            
+            // Always save to localStorage when receiving new drawings
+            this.saveToLocalStorage();
+            return;
+        }
+
+        if (data.action === 'openDrawing') {
+            const drawingId = data.drawingId;
+            if (this.drawings[drawingId]) {
+                this.currentDrawingId = drawingId;
+                this.drawingOperations = [...this.drawings[drawingId].operations];
+                this.history.clear();
+                this.history.saveState(this.drawingOperations);
+                this.redraw();
+                this.updateDrawingNameDisplay();
+                this.updateUndoRedoButtons();
+            }
+            return;
+        }
+
         const op = {
             ...data,
             x: parseFloat(data.x),
@@ -173,7 +319,12 @@ class DrawingApp {
 
         this.drawingOperations.push(op);
         this.redraw();
-        this.saveToLocalStorage();
+        
+        // Save after each operation
+        if (this.currentDrawingId) {
+            this.drawings[this.currentDrawingId].operations = [...this.drawingOperations];
+            this.saveToLocalStorage();
+        }
 
         if (data.action === 'up') {
             this.history.saveState(this.drawingOperations);
@@ -284,10 +435,49 @@ class DrawingApp {
      */
     saveToLocalStorage() {
         try {
-            localStorage.setItem('inkSync_drawing', JSON.stringify(this.drawingOperations));
-            console.log('[Storage] Drawing saved');
+            // Validate current drawing state before saving
+            if (this.currentDrawingId && this.drawings[this.currentDrawingId]) {
+                // Ensure the current drawing entry exists and has all required properties
+                this.drawings[this.currentDrawingId] = {
+                    name: this.drawings[this.currentDrawingId].name,
+                    operations: [...this.drawingOperations]
+                };
+            }
+            
+            // Validate all drawings before saving
+            const validDrawings = {};
+            Object.entries(this.drawings).forEach(([id, drawing]) => {
+                if (drawing && drawing.name && Array.isArray(drawing.operations)) {
+                    validDrawings[id] = {
+                        name: drawing.name,
+                        operations: [...drawing.operations]
+                    };
+                }
+            });
+            
+            const data = {
+                currentDrawingId: this.currentDrawingId,
+                drawings: validDrawings
+            };
+
+            // Only save if we have valid data
+            if (Object.keys(validDrawings).length > 0 || !this.currentDrawingId) {
+                localStorage.setItem('inkSync_drawings', JSON.stringify(data));
+                console.log('[Storage] Drawings saved:', Object.keys(validDrawings).length, 'drawings');
+            } else {
+                console.warn('[Storage] No valid drawings to save');
+            }
         } catch (e) {
-            console.error('[Storage] Error saving drawing:', e);
+            console.error('[Storage] Error saving drawings:', e);
+            // If saving fails, try to preserve existing storage
+            try {
+                const existing = localStorage.getItem('inkSync_drawings');
+                if (existing) {
+                    console.log('[Storage] Preserved existing drawings data');
+                }
+            } catch (err) {
+                console.error('[Storage] Could not preserve existing drawings:', err);
+            }
         }
     }
 
@@ -296,14 +486,54 @@ class DrawingApp {
      */
     loadFromLocalStorage() {
         try {
-            const saved = localStorage.getItem('inkSync_drawing');
+            const saved = localStorage.getItem('inkSync_drawings');
             if (saved) {
-                this.drawingOperations = JSON.parse(saved);
-                console.log('[Storage] Drawing loaded');
-                this.redraw();
+                const data = JSON.parse(saved);
+                
+                // First, validate the data structure
+                if (!data.drawings || typeof data.drawings !== 'object') {
+                    console.error('[Storage] Invalid drawings data structure');
+                    return;
+                }
+
+                // Load all drawings first
+                this.drawings = {};
+                Object.entries(data.drawings).forEach(([id, drawing]) => {
+                    if (drawing && drawing.name && Array.isArray(drawing.operations)) {
+                        this.drawings[id] = {
+                            name: drawing.name,
+                            operations: [...drawing.operations]
+                        };
+                    }
+                });
+
+                // Then set the current drawing ID and load its state
+                this.currentDrawingId = data.currentDrawingId;
+                
+                if (this.currentDrawingId && this.drawings[this.currentDrawingId]) {
+                    // Load the current drawing's operations
+                    this.drawingOperations = [...this.drawings[this.currentDrawingId].operations];
+                    this.history.clear();
+                    this.history.saveState(this.drawingOperations);
+                    this.redraw();
+                } else {
+                    // Reset if no valid current drawing
+                    this.currentDrawingId = null;
+                    this.drawingOperations = [];
+                }
+
+                // Update UI elements
+                this.updateDrawingNameDisplay();
+                this.updateUndoRedoButtons();
+                
+                console.log('[Storage] Drawings loaded:', Object.keys(this.drawings).length, 'drawings');
             }
         } catch (e) {
-            console.error('[Storage] Error loading drawing:', e);
+            console.error('[Storage] Error loading drawings:', e);
+            // Reset state on error
+            this.currentDrawingId = null;
+            this.drawingOperations = [];
+            this.drawings = {};
         }
     }
 
@@ -336,6 +566,306 @@ class DrawingApp {
                 this.canvasView.setSpacebarState(false);
             }
         });
+    }
+
+    /**
+     * Creates a new drawing
+     */
+    createNewDrawing() {
+        const name = prompt('Enter a name for the new drawing:');
+        if (!name) return;
+        
+        // Check for duplicate names
+        if (Object.values(this.drawings).some(drawing => drawing.name === name)) {
+            alert('A drawing with this name already exists. Please choose a different name.');
+            return;
+        }
+        
+        const drawingId = `drawing_${Date.now()}`;
+        this.drawings[drawingId] = {
+            name: name,
+            operations: []
+        };
+        this.currentDrawingId = drawingId;
+        this.drawingOperations = [];
+        this.history.clear(); // Reset history for new drawing
+        this.redraw();
+        this.saveToLocalStorage();
+        this.updateDrawingNameDisplay();
+        this.updateUndoRedoButtons();
+        // Broadcast the new drawing to connected clients
+        this.broadcastSave();
+        this.broadcastDrawings(); // Ensure all clients have the full set of drawings
+        this.broadcastOpen(this.currentDrawingId); // Ensure all clients open the new drawing
+    }
+
+    /**
+     * Saves the current drawing
+     */
+    saveCurrentDrawing() {
+        if (this.currentDrawingId) {
+            const currentDrawing = this.drawings[this.currentDrawingId];
+            const newName = prompt('Enter a name for the drawing:', currentDrawing.name);
+            if (!newName) return;
+            
+            // Check for duplicate names (excluding current drawing)
+            if (Object.entries(this.drawings).some(([id, drawing]) => 
+                drawing.name === newName && id !== this.currentDrawingId
+            )) {
+                alert('A drawing with this name already exists. Please choose a different name.');
+                return;
+            }
+            
+            // Keep existing drawings and just update the current one
+            this.drawings = {
+                ...this.drawings,
+                [this.currentDrawingId]: {
+                    name: newName,
+                    operations: [...this.drawingOperations]
+                }
+            };
+            
+            this.saveToLocalStorage();
+            this.broadcastSave();
+            this.broadcastDrawings(); // Ensure all clients have the full set of drawings
+            this.broadcastOpen(this.currentDrawingId);
+            this.updateDrawingNameDisplay();
+        } else {
+            // If no drawing is active, create a new one
+            this.createNewDrawing();
+        }
+    }
+
+    /**
+     * Opens an existing drawing
+     */
+    openDrawing() {
+        const drawings = Object.entries(this.drawings)
+            .map(([id, drawing]) => ({ id, name: drawing.name }));
+
+        if (drawings.length === 0) {
+            alert('No saved drawings found');
+            return;
+        }
+
+        // Remove any existing dialog
+        const existingDialog = document.querySelector('.drawings-dialog');
+        if (existingDialog) {
+            existingDialog.remove();
+        }
+
+        // Create a container for the dialog
+        const dialog = document.createElement('div');
+        dialog.className = 'drawings-dialog';
+        Object.assign(dialog.style, {
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            padding: '24px',
+            background: '#fff',
+            borderRadius: '12px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.2)',
+            zIndex: '2000',
+            maxWidth: '90%',
+            width: '400px'
+        });
+
+        // Create a title for the dialog
+        const title = document.createElement('h2');
+        title.textContent = 'Open Drawing';
+        dialog.appendChild(title);
+
+        // Create the scrollable container for the drawing items
+        const listContainer = document.createElement('div');
+        listContainer.className = 'drawings-list';
+        listContainer.style.marginBottom = '16px';
+        dialog.appendChild(listContainer);
+
+        // Helper function to close the dialog
+        const closeDialog = () => {
+            dialog.remove();
+        };
+
+        // Create each drawing item with pointer events to distinguish scroll vs. tap
+        drawings.forEach(drawing => {
+            // Create a container for the drawing item and delete button
+            const itemContainer = document.createElement('div');
+            itemContainer.className = 'drawing-item-container';
+            
+            // Create the drawing button
+            const button = document.createElement('button');
+            button.className = 'drawing-item';
+            button.textContent = drawing.name;
+            button.dataset.id = drawing.id;
+            
+            let pointerDown = false;
+            let startX = 0, startY = 0;
+            
+            button.addEventListener('pointerdown', (e) => {
+                pointerDown = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                button.setPointerCapture(e.pointerId);
+            });
+            
+            button.addEventListener('pointerup', (e) => {
+                if (!pointerDown) return;
+                pointerDown = false;
+                const deltaX = Math.abs(e.clientX - startX);
+                const deltaY = Math.abs(e.clientY - startY);
+                if (deltaX < 10 && deltaY < 10) {
+                    if (this.drawings[drawing.id]) {
+                        this.currentDrawingId = drawing.id;
+                        this.drawingOperations = [...this.drawings[drawing.id].operations];
+                        this.history.clear();
+                        this.history.saveState(this.drawingOperations);
+                        this.redraw();
+                        this.updateDrawingNameDisplay();
+                        this.updateUndoRedoButtons();
+                        this.broadcastOpen(drawing.id);
+                    }
+                    closeDialog();
+                }
+                button.releasePointerCapture(e.pointerId);
+            });
+            
+            button.addEventListener('pointercancel', (e) => {
+                pointerDown = false;
+                button.releasePointerCapture(e.pointerId);
+            });
+            
+            // Create the delete button with a cross icon
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'delete-button';
+            deleteButton.innerHTML = '&times;'; // Cross icon
+            
+            // Bind delete action: remove drawing from the app and local storage
+            deleteButton.addEventListener('click', async (e) => {
+                // Prevent the event from triggering the button pointer events
+                e.stopPropagation();
+                
+                const drawingId = drawing.id;
+                const drawingName = this.drawings[drawingId].name;
+                
+                // Ask for confirmation before deleting
+                if (!confirm(`Are you sure you want to delete "${drawingName}"? This action cannot be undone.`)) {
+                    return;
+                }
+                
+                // Remove the drawing from the drawings object
+                delete this.drawings[drawingId];
+                
+                // If the deleted drawing was the current one, clear the canvas
+                if (this.currentDrawingId === drawingId) {
+                    this.currentDrawingId = null;
+                    this.drawingOperations = [];
+                    this.history.clear();
+                    this.redraw();
+                }
+                
+                // Update local storage
+                this.saveToLocalStorage();
+                // Update the drawing name display
+                this.updateDrawingNameDisplay();
+                // Remove the container from the dialog
+                itemContainer.remove();
+                
+                // If this was the last drawing, close the dialog
+                if (Object.keys(this.drawings).length === 0) {
+                    closeDialog();
+                }
+                
+                // Broadcast the deletion to other clients
+                if (this.webSocket.isConnected()) {
+                    this.webSocket.send({ 
+                        action: 'deleteDrawing', 
+                        drawingId: drawingId 
+                    });
+                }
+            });
+
+            // Prevent pointer events on the delete button from bubbling up
+            deleteButton.addEventListener('pointerdown', (e) => e.stopPropagation());
+            deleteButton.addEventListener('pointerup', (e) => e.stopPropagation());
+            
+            // Append button and deleteButton to the item container
+            itemContainer.appendChild(button);
+            itemContainer.appendChild(deleteButton);
+            
+            // Append the container to the list container
+            listContainer.appendChild(itemContainer);
+        });
+
+        // Add a close button
+        const closeButton = document.createElement('button');
+        closeButton.className = 'close-button';
+        closeButton.textContent = 'Close';
+        closeButton.addEventListener('click', closeDialog);
+        dialog.appendChild(closeButton);
+
+        // For backdrop handling: close dialog if click/tap outside dialog
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) {
+                closeDialog();
+            }
+        });
+
+        document.body.appendChild(dialog);
+    }
+
+    /**
+     * Broadcasts save action to other clients
+     */
+    broadcastSave() {
+        if (this.webSocket.isConnected()) {
+            this.webSocket.send({ 
+                action: 'saveDrawing', 
+                drawingId: this.currentDrawingId, 
+                drawing: this.drawings[this.currentDrawingId] 
+            });
+        }
+    }
+
+    /**
+     * Broadcasts open action to other clients
+     * @param {string} drawingId - The ID of the drawing to open
+     */
+    broadcastOpen(drawingId) {
+        if (this.webSocket.isConnected()) {
+            this.webSocket.send({ action: 'openDrawing', drawingId });
+        }
+    }
+
+    broadcastDrawings() {
+        if (this.webSocket.isConnected()) {
+            this.webSocket.send({
+                action: 'syncDrawings',
+                drawings: this.drawings,
+                currentDrawingId: this.currentDrawingId
+            });
+        }
+    }
+
+    setupDrawingNameDisplay() {
+        const nameDisplay = document.createElement('div');
+        nameDisplay.className = 'drawing-name';
+        nameDisplay.textContent = 'Untitled Drawing';
+        document.body.appendChild(nameDisplay);
+        this.drawingNameDisplay = nameDisplay;
+    }
+
+    updateDrawingNameDisplay() {
+        const currentDrawing = this.currentDrawingId && this.drawings[this.currentDrawingId];
+        if (currentDrawing && currentDrawing.name) {
+            this.drawingNameDisplay.textContent = currentDrawing.name;
+        } else {
+            this.drawingNameDisplay.textContent = 'Untitled Drawing';
+            // If we have a currentDrawingId but no valid drawing data, reset it
+            if (this.currentDrawingId && !currentDrawing) {
+                this.currentDrawingId = null;
+            }
+        }
     }
 }
 

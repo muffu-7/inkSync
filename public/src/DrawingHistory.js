@@ -66,6 +66,15 @@ export class DrawingHistory {
     }
 
     /**
+     * Clears all undo/redo history
+     */
+    clear() {
+        this.undoStack = [];
+        this.redoStack = [];
+        this.isUndoRedo = false;
+    }
+
+    /**
      * Checks if undo operation is available
      * @returns {boolean} True if undo is possible
      */

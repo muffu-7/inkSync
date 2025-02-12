@@ -64,6 +64,11 @@ export class WebSocketManager {
      * @param {Object} data - The drawing action data
      */
     handleConnection(data) {
+        if (data.action === 'saveDrawing' || data.action === 'openDrawing') {
+            this.onMessage(data);
+            return;
+        }
+        
         if (data.action === 'down') {
             this.activeConnections.set(data.pointerId, { lastX: data.x, lastY: data.y });
         }

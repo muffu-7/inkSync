@@ -203,6 +203,11 @@ export class CanvasView {
      * @param {TouchEvent} e - The touch event
      */
     handleTouchStart(e) {
+        // Ignore touch events from toolbar
+        if (e.target.closest('.toolbar')) {
+            return;
+        }
+        
         // Completely prevent touch handling if any pen pointer is active
         if (this.activePointerTypes.has('pen')) {
             e.preventDefault();
@@ -228,6 +233,11 @@ export class CanvasView {
      * @param {TouchEvent} e - The touch event
      */
     handleTouchMove(e) {
+        // Ignore touch events from toolbar
+        if (e.target.closest('.toolbar')) {
+            return;
+        }
+        
         // Completely prevent touch handling if any pen pointer is active
         if (this.activePointerTypes.has('pen')) {
             e.preventDefault();
@@ -269,6 +279,11 @@ export class CanvasView {
      * @param {TouchEvent} e - The touch event
      */
     handleTouchEnd(e) {
+        // Ignore touch events from toolbar
+        if (e.target.closest('.toolbar')) {
+            return;
+        }
+        
         // Completely prevent touch handling if any pen pointer is active
         if (this.activePointerTypes.has('pen')) {
             e.preventDefault();
@@ -281,21 +296,6 @@ export class CanvasView {
         e.preventDefault();
         this.isPinching = false;
         this.isPanning = false;
-        this.initialPinchDistance = 0;
-    }
-
-    /**
-     * Initiates mouse-based panning
-     * Only responds to middle mouse button or left click with spacebar
-     * @param {MouseEvent} e - The mouse event
-     */
-    handleMouseDown(e) {
-        // Don't handle mouse events if pen is active
-        if (this.isPenActive) return;
-        
-        if (e.button !== 1 && !(this.isSpacebarDown && e.button === 0)) return;
-        e.preventDefault();
-        this.isMousePanning = true;
         this.lastMouseX = e.clientX;
         this.lastMouseY = e.clientY;
         this.canvas.style.cursor = 'grabbing';
@@ -326,6 +326,24 @@ export class CanvasView {
         e.preventDefault();
         this.isMousePanning = false;
         this.canvas.style.cursor = this.isSpacebarDown ? 'grab' : 'default';
+    }
+
+    /**
+     * Initiates mouse-based panning when spacebar is pressed
+     * @param {MouseEvent} e - The mouse event
+     */
+    handleMouseDown(e) {
+        // Don't handle mouse events if pen is active
+        if (this.isPenActive) return;
+        
+        // Only start panning if spacebar is pressed or middle mouse button is used
+        if (!this.isSpacebarDown && e.button !== 1) return;
+        
+        e.preventDefault();
+        this.isMousePanning = true;
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+        this.canvas.style.cursor = 'grabbing';
     }
 
     /**
@@ -372,6 +390,10 @@ export class CanvasView {
      * @param {PointerEvent} e - The pointer event
      */
     handlePointerDown(e) {
+        // Ignore events if they originated from the toolbar
+        if (e.target.closest('.toolbar')) {
+            return;
+        }
         this.activePointerTypes.add(e.pointerType);
     }
 
@@ -380,6 +402,10 @@ export class CanvasView {
      * @param {PointerEvent} e - The pointer event
      */
     handlePointerUp(e) {
+        // Ignore events if they originated from the toolbar
+        if (e.target.closest('.toolbar')) {
+            return;
+        }
         this.activePointerTypes.delete(e.pointerType);
     }
 }

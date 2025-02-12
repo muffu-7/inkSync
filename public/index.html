@@ -71,40 +71,120 @@
             font-size: 12px;
         }
 
+        /* Drawing name display */
+        .drawing-name {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            padding: 5px 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border-radius: 4px;
+            font-family: sans-serif;
+            font-size: 12px;
+            z-index: 100;
+            max-width: 200px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        @media (max-width: 480px) {
+            .drawing-name {
+                max-width: 150px;
+                font-size: 11px;
+            }
+        }
+
         /* Bottom toolbar styling */
         .toolbar {
             position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+            bottom: env(safe-area-inset-bottom, 20px);
+            left: 0;
+            right: 0;
             background: rgba(0,0,0,0.8);
-            padding: 10px 16px;
-            border-radius: 8px;
+            padding: 12px 16px;
+            padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
             display: flex;
-            gap: 16px;
+            gap: 12px;
             align-items: center;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            max-width: 100%;
+            margin: 0 auto;
+            border-radius: 0;
+            z-index: 1000;
+            touch-action: pan-x;
+            pointer-events: auto;
+            user-select: none;
+            -webkit-user-select: none;
+            /* Improve touch scrolling performance */
+            will-change: transform;
+            transform: translateZ(0);
+            -webkit-transform: translateZ(0);
+        }
+
+        /* Create a hit area for the toolbar that prevents canvas interaction */
+        .toolbar::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: -20px; /* Extra touch area above toolbar */
+            bottom: 0;
+            z-index: -1;
+        }
+
+        .toolbar * {
+            pointer-events: auto;
+            touch-action: manipulation;
+        }
+        
+        /* Hide scrollbar but keep functionality */
+        .toolbar::-webkit-scrollbar {
+            display: none;
         }
 
         /* Toolbar button styles */
         .toolbar button {
-            padding: 8px 16px;
+            padding: 12px 20px;
             border: none;
-            border-radius: 4px;
+            border-radius: 8px;
             background: #444;
             color: white;
             cursor: pointer;
             font-family: sans-serif;
-            transition: all 0.2s;
+            transition: background-color 0.2s;
+            white-space: nowrap;
+            min-height: 44px;
+            font-size: 14px;
+            flex-shrink: 0;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
         }
 
         /* Active tool indicator */
         .toolbar button.active {
             background: #0066ff;
+            box-shadow: 0 0 0 2px rgba(255,255,255,0.2);
+        }
+
+        .toolbar button.active:active {
+            background: #0052cc;
         }
 
         /* Button hover effect */
         .toolbar button:hover {
             opacity: 0.9;
+        }
+
+        /* Visual feedback for touch */
+        .toolbar button:active {
+            background: #333;
+            transform: scale(0.95);
+            transition: transform 0.1s;
         }
 
         /* Disabled button state */
@@ -118,16 +198,24 @@
         .size-control {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 12px;
             color: white;
             font-family: sans-serif;
-            font-size: 12px;
+            font-size: 14px;
+            flex-shrink: 0;
+            padding: 0 8px;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         /* Size slider styling */
         .size-control input[type="range"] {
-            width: 100px;
+            width: 120px;
+            height: 28px;
             accent-color: #0066ff;
+            border-radius: 8px;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         /* Size value display */
@@ -139,6 +227,219 @@
         /* Hide size control when pen tool is active */
         .size-control.hidden {
             display: none;
+        }
+
+        @media (min-width: 768px) {
+            .toolbar {
+                left: 50%;
+                right: auto;
+                transform: translateX(-50%);
+                max-width: 90%;
+                border-radius: 12px;
+                bottom: 20px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .toolbar {
+                gap: 8px;
+                padding: 10px 12px;
+                padding-bottom: calc(10px + env(safe-area-inset-bottom, 0));
+            }
+            
+            .toolbar button {
+                padding: 12px 16px;
+                font-size: 14px;
+                min-height: 48px; /* Larger touch target on mobile */
+            }
+
+            .size-control {
+                gap: 8px;
+            }
+
+            .size-control input[type="range"] {
+                width: 100px;
+            }
+        }
+
+        /* Drawings Dialog Styles */
+        .drawings-dialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 24px;
+            border: none;
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+            max-width: 90%;
+            width: 400px;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+            margin: 0;
+        }
+
+        .drawings-dialog::backdrop {
+            background: rgba(0,0,0,0.5);
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .drawings-dialog h2 {
+            margin: 0 0 16px 0;
+            font-family: sans-serif;
+            font-size: 20px;
+            color: #333;
+        }
+
+        .drawings-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 16px;
+            max-height: 60vh;
+            overflow-y: scroll;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            touch-action: pan-y;
+            padding: 4px;
+            scrollbar-width: thin;
+        }
+
+        .drawings-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .drawings-list::-webkit-scrollbar-thumb {
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+        }
+
+        .drawing-item {
+            padding: 12px 16px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #f8f8f8;
+            color: #333;
+            font-family: sans-serif;
+            font-size: 14px;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s;
+            width: 100%;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+            margin: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            pointer-events: auto;
+        }
+
+        .drawing-item:hover {
+            background: #eef5ff;
+            border-color: #0066ff;
+        }
+
+        .drawing-item:active {
+            background: #eef5ff;
+            border-color: #0066ff;
+        }
+
+        .drawing-item-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+        }
+
+        .delete-button {
+            background: none;
+            border: none;
+            color: red;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0 8px;
+        }
+
+        .delete-button:hover {
+            color: darkred;
+        }
+
+        .close-button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background: #444;
+            color: white;
+            font-family: sans-serif;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .close-button:hover {
+            background: #333;
+        }
+
+        .close-button:active {
+            background: #333;
+        }
+
+        @media (max-height: 600px) {
+            .drawings-dialog {
+                top: 20px;
+                transform: translateX(-50%);
+                max-height: calc(100vh - 40px);
+            }
+
+            .drawings-list {
+                max-height: calc(100vh - 160px);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .drawings-dialog {
+                padding: 16px;
+                width: calc(100% - 32px);
+                max-height: calc(100vh - 32px);
+            }
+
+            .drawings-list {
+                max-height: calc(100vh - 140px);
+            }
+
+            .drawing-item, .close-button {
+                -webkit-touch-callout: none;
+                user-select: none;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .drawings-dialog {
+                padding: 16px;
+                width: calc(100% - 32px);
+                margin: 16px;
+                max-height: 80vh;
+            }
+
+            .drawings-list {
+                max-height: calc(80vh - 120px);
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .drawing-item {
+                padding: 14px 16px;
+                font-size: 16px;
+                min-height: 44px;
+            }
+
+            .close-button {
+                min-height: 44px;
+                font-size: 16px;
+            }
         }
     </style>
 </head>
