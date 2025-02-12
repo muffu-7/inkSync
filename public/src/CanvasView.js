@@ -116,12 +116,14 @@ export class CanvasView {
                 this.ctx.beginPath();
                 this.ctx.moveTo(op.x, op.y);
                 this.ctx.globalCompositeOperation = op.isErasing ? 'destination-out' : 'source-over';
+                this.ctx.strokeStyle = op.color || '#000000'; // Use pen color or default to black
             } else if (op.action === 'move') {
                 const lineWidth = (op.isErasing ? op.eraserSize : Math.max(1, op.pressure * 10)) / this.scale;
                 this.ctx.lineWidth = lineWidth;
                 this.ctx.beginPath();
                 this.ctx.moveTo(op.prevX, op.prevY);
                 this.ctx.lineTo(op.x, op.y);
+                this.ctx.strokeStyle = op.color || '#000000'; // Use pen color or default to black
                 this.ctx.stroke();
             }
         });

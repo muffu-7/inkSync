@@ -15,6 +15,7 @@ export class ToolbarManager {
      * @param {Function} options.onNewDrawingClick - Handler for new drawing action
      * @param {Function} options.onSaveDrawingClick - Handler for save drawing action
      * @param {Function} options.onOpenDrawingClick - Handler for open drawing action
+     * @param {Function} options.onColorChange - Handler for color change action
      */
     constructor(options) {
         this.options = options;
@@ -79,6 +80,7 @@ export class ToolbarManager {
                 <input type="range" id="sizeSlider" min="5" max="50" value="20">
                 <span id="sizeValue" class="size-value">20</span>
             </div>
+            <input type="color" id="colorPicker" value="#000000" title="Choose pen color">
             <button id="newDrawing">New Drawing</button>
             <button id="saveDrawing">Save Drawing</button>
             <button id="openDrawing">Open Drawing</button>
@@ -94,6 +96,7 @@ export class ToolbarManager {
             sizeControl: document.getElementById('sizeControl'),
             sizeSlider: document.getElementById('sizeSlider'),
             sizeValue: document.getElementById('sizeValue'),
+            colorPicker: document.getElementById('colorPicker'),
             newDrawingButton: document.getElementById('newDrawing'),
             saveDrawingButton: document.getElementById('saveDrawing'),
             openDrawingButton: document.getElementById('openDrawing')
@@ -107,7 +110,7 @@ export class ToolbarManager {
      * Connects UI interactions with the provided callback functions
      */
     bindEvents() {
-        const { onPenClick, onEraserClick, onClearClick, onUndoClick, onRedoClick, onSizeChange, onNewDrawingClick, onSaveDrawingClick, onOpenDrawingClick } = this.options;
+        const { onPenClick, onEraserClick, onClearClick, onUndoClick, onRedoClick, onSizeChange, onColorChange, onNewDrawingClick, onSaveDrawingClick, onOpenDrawingClick } = this.options;
 
         // Helper function to handle proper tap events
         const bindTapHandler = (element, handler) => {
@@ -182,6 +185,11 @@ export class ToolbarManager {
             this.elements.sizeValue.textContent = size;
             onSizeChange(size);
         };
+
+        this.elements.colorPicker.addEventListener('input', (e) => {
+            e.stopPropagation();
+            onColorChange(e.target.value);
+        });
     }
 
     /**

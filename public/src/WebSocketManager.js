@@ -13,6 +13,7 @@ export class WebSocketManager {
         this.onStatusChange = onStatusChange;
         // Track active pointer connections for coordinating multi-device drawing
         this.activeConnections = new Map();
+        this.lastSyncRequestTime = 0;
         this.setup();
     }
 
@@ -33,6 +34,13 @@ export class WebSocketManager {
         this.socket.onopen = () => {
             console.log('[WebSocket] Connected successfully');
             this.onStatusChange('Connected', 'rgba(0,128,0,0.7)');
+            
+            // After connection, request sync from other clients
+            this.lastSyncRequestTime = Date.now();
+            this.send({ 
+                action: 'syncRequest',
+                timestamp: this.lastSyncRequestTime
+            });
         };
 
         // Message handler
@@ -40,6 +48,48 @@ export class WebSocketManager {
             const message = event.data;
             console.log('[WebSocket] Received message:', message.slice(0, 100) + '...');
             const data = JSON.parse(message);
+            
+            // Handle sync request: client with most recent data responds
+            if (data.action === 'syncRequest') {
+                const savedData = localStorage.getItem('inkSync_drawings');
+                if (savedData) {
+                    const parsedData = JSON.parse(savedData);
+                    // Add timestamp to track most recent data
+                    if (!parsedData.lastSyncTimestamp) {
+                        parsedData.lastSyncTimestamp = Date.now();
+                    }
+                    
+                    // Only respond if our data is more recent
+                    if (!data.timestamp || parsedData.lastSyncTimestamp > data.timestamp) {
+                        // Add random delay between 100-600ms to prevent sync storms
+                        const randomDelay = 100 + Math.random() * 500;
+                        setTimeout(() => {
+                            this.send({
+                                action: 'syncResponse',
+                                drawings: parsedData.drawings,
+                                currentDrawingId: parsedData.currentDrawingId,
+                                timestamp: parsedData.lastSyncTimestamp
+                            });
+                        }, randomDelay);
+                    }
+                }
+                return;
+            }
+            
+            // Only process sync responses that are newer than our request
+            if (data.action === 'syncResponse') {
+                if (data.timestamp < this.lastSyncRequestTime) {
+                    console.log('[WebSocket] Ignoring older sync response');
+                    return;
+                }
+                // Add a small delay before processing sync response
+                setTimeout(() => {
+                    this.handleConnection(data);
+                    this.onMessage(data);
+                }, 50);
+                return;
+            }
+            
             this.handleConnection(data);
             this.onMessage(data);
         };
