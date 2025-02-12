@@ -49,6 +49,10 @@ const wss = new WebSocketServer({ server });
  */
 const clients = new Set();
 
+// Track the latest sync response
+let latestSyncTimestamp = 0;
+let latestSyncData = null;
+
 // WebSocket connection handler
 wss.on('connection', (ws, req) => {
     // Generate unique client ID and add to active clients
@@ -62,6 +66,24 @@ wss.on('connection', (ws, req) => {
         try {
             const data = JSON.parse(message);
             console.log(`[WebSocket] Client ${clientId} sent ${data.action} action`);
+            
+            // Handle sync messages specially
+            if (data.action === 'syncResponse' && data.timestamp) {
+                if (data.timestamp > latestSyncTimestamp) {
+                    latestSyncTimestamp = data.timestamp;
+                    latestSyncData = data;
+                    console.log(`[WebSocket] Updated latest sync data from client ${clientId}`);
+                }
+            }
+            
+            // For sync requests, first try to send the latest known data
+            if (data.action === 'syncRequest') {
+                if (latestSyncData && latestSyncData.timestamp > data.timestamp) {
+                    ws.send(JSON.stringify(latestSyncData));
+                    console.log(`[WebSocket] Sent cached sync data to client ${clientId}`);
+                    return;
+                }
+            }
             
             // Broadcast the message to all other connected clients
             let broadcast = 0;
@@ -93,6 +115,13 @@ wss.on('connection', (ws, req) => {
     ws.on('close', () => {
         clients.delete(ws);
         console.log(`[WebSocket] Client ${clientId} disconnected. Total clients: ${clients.size}`);
+        
+        // If the last client disconnects, reset sync data
+        if (clients.size === 0) {
+            latestSyncTimestamp = 0;
+            latestSyncData = null;
+            console.log('[WebSocket] Reset sync data as all clients disconnected');
+        }
     });
 
     // Send initial connection acknowledgment to the client

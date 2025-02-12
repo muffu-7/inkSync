@@ -165,6 +165,41 @@
             -webkit-tap-highlight-color: transparent;
         }
 
+        .toolbar input[type="color"] {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            background: #444;
+            color: white;
+            cursor: pointer;
+            font-family: sans-serif;
+            transition: background-color 0.2s;
+            white-space: nowrap;
+            min-height: 44px;
+            font-size: 14px;
+            flex-shrink: 0;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .toolbar input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+
+        .toolbar input[type="color"]::-webkit-color-swatch {
+            border: none;
+        }
+
+        .toolbar input[type="color"]:hover {
+            opacity: 0.9;
+        }
+
+        .toolbar input[type="color"]:active {
+            background: #333;
+            transform: scale(0.95);
+            transition: transform 0.1s;
+        }
+
         /* Active tool indicator */
         .toolbar button.active {
             background: #0066ff;

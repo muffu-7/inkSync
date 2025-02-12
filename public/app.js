@@ -20,11 +20,12 @@ class DrawingApp {
         this.currentDrawingId = null;
         this.drawings = {}; // Format: { id: { name: string, operations: array } }
         this.isInitialized = false; // Add flag to track initialization
+        this.currentPenColor = '#000000'; // Default pen color
 
         this.setupComponents();
+        this.setupDrawingNameDisplay();
         this.loadFromLocalStorage();
         this.setupEventListeners();
-        this.setupDrawingNameDisplay();
         
         // Mark as initialized after all setup is complete
         this.isInitialized = true;
@@ -61,6 +62,7 @@ class DrawingApp {
             onUndoClick: () => this.undo(),
             onRedoClick: () => this.redo(),
             onSizeChange: (size) => this.eraserSize = size,
+            onColorChange: (color) => this.currentPenColor = color, // Bind color change
             onNewDrawingClick: () => this.createNewDrawing(),
             onSaveDrawingClick: () => this.saveCurrentDrawing(),
             onOpenDrawingClick: () => this.openDrawing()
@@ -100,7 +102,8 @@ class DrawingApp {
             pressure: e.pressure,
             isErasing: this.isErasing,
             eraserSize: this.eraserSize,
-            pointerId: e.pointerId
+            pointerId: e.pointerId,
+            color: this.currentPenColor // Include pen color
         };
         
         this.drawingOperations.push(op);
@@ -132,7 +135,8 @@ class DrawingApp {
             pressure: e.pressure,
             isErasing: this.isErasing,
             eraserSize: this.eraserSize,
-            pointerId: e.pointerId
+            pointerId: e.pointerId,
+            color: this.currentPenColor // Include pen color
         };
 
         this.drawingOperations.push(op);
@@ -179,24 +183,24 @@ class DrawingApp {
                 setTimeout(() => this.handleRemoteDrawing(data), 100);
                 return;
             }
-            // Send all drawings to the requesting client
-            const allDrawings = Object.entries(this.drawings).map(([id, drawing]) => ({
-                action: 'saveDrawing',
-                drawingId: id,
-                drawing: drawing
-            }));
-            
-            // Send drawings in sequence with small delays to ensure proper order
-            allDrawings.forEach((drawingData, index) => {
-                setTimeout(() => {
-                    this.webSocket.send(drawingData);
-                }, index * 50);
+            // Send only the current drawing ID to the requesting client
+            this.webSocket.send({
+                action: 'currentDrawingId',
+                currentDrawingId: this.currentDrawingId
             });
+            return;
+        }
 
-            // Then open the current drawing if one exists
+        if (data.action === 'currentDrawingId') {
+            // Load the current drawing from local storage using the received ID
+            this.currentDrawingId = data.currentDrawingId;
             if (this.currentDrawingId && this.drawings[this.currentDrawingId]) {
-                setTimeout(() => this.broadcastOpen(this.currentDrawingId), 
-                    (allDrawings.length + 1) * 50);
+                this.drawingOperations = [...this.drawings[this.currentDrawingId].operations];
+                this.history.clear();
+                this.history.saveState(this.drawingOperations);
+                this.redraw();
+                this.updateDrawingNameDisplay();
+                this.updateUndoRedoButtons();
             }
             return;
         }
@@ -309,12 +313,37 @@ class DrawingApp {
             return;
         }
 
+        if (data.action === 'syncResponse') {
+            // Only update if we receive more recent data
+            const currentData = localStorage.getItem('inkSync_drawings');
+            const currentTimestamp = currentData ? JSON.parse(currentData).lastSyncTimestamp : 0;
+            
+            if (!currentTimestamp || (data.timestamp && data.timestamp > currentTimestamp)) {
+                console.log('[Sync] Received newer drawing data, updating...');
+                this.drawings = { ...data.drawings };
+                this.currentDrawingId = data.currentDrawingId;
+                
+                if (this.currentDrawingId && this.drawings[this.currentDrawingId]) {
+                    this.drawingOperations = [...this.drawings[this.currentDrawingId].operations];
+                    this.history.clear();
+                    this.history.saveState(this.drawingOperations);
+                    this.redraw();
+                }
+                
+                this.updateDrawingNameDisplay();
+                this.updateUndoRedoButtons();
+                this.saveToLocalStorage();
+            }
+            return;
+        }
+
         const op = {
             ...data,
             x: parseFloat(data.x),
             y: parseFloat(data.y),
             prevX: data.prevX !== undefined ? parseFloat(data.prevX) : undefined,
-            prevY: data.prevY !== undefined ? parseFloat(data.prevY) : undefined
+            prevY: data.prevY !== undefined ? parseFloat(data.prevY) : undefined,
+            color: data.color || '#000000' // Default to black if no color
         };
 
         this.drawingOperations.push(op);
@@ -351,7 +380,8 @@ class DrawingApp {
             isErasing: this.isErasing,
             eraserSize: this.eraserSize,
             prevX: this.lastX !== undefined ? Math.round(this.lastX * 100) / 100 : undefined,
-            prevY: this.lastY !== undefined ? Math.round(this.lastY * 100) / 100 : undefined
+            prevY: this.lastY !== undefined ? Math.round(this.lastY * 100) / 100 : undefined,
+            color: this.currentPenColor // Include pen color
         };
 
         this.webSocket.send(pointerData);
@@ -434,50 +464,40 @@ class DrawingApp {
      * Persists current drawing state to localStorage
      */
     saveToLocalStorage() {
-        try {
-            // Validate current drawing state before saving
-            if (this.currentDrawingId && this.drawings[this.currentDrawingId]) {
-                // Ensure the current drawing entry exists and has all required properties
-                this.drawings[this.currentDrawingId] = {
-                    name: this.drawings[this.currentDrawingId].name,
-                    operations: [...this.drawingOperations]
+        console.debug('[Storage] saveToLocalStorage called.');
+        console.debug('[Storage] currentDrawingId:', this.currentDrawingId);
+        
+        // Validate current drawing state before saving
+        if (this.currentDrawingId && this.drawings[this.currentDrawingId]) {
+            this.drawings[this.currentDrawingId] = {
+                name: this.drawings[this.currentDrawingId].name,
+                operations: [...this.drawingOperations]
+            };
+        }
+        
+        const validDrawings = {};
+        Object.entries(this.drawings).forEach(([id, drawing]) => {
+            if (drawing && drawing.name && Array.isArray(drawing.operations)) {
+                validDrawings[id] = {
+                    name: drawing.name,
+                    operations: [...drawing.operations]
                 };
             }
-            
-            // Validate all drawings before saving
-            const validDrawings = {};
-            Object.entries(this.drawings).forEach(([id, drawing]) => {
-                if (drawing && drawing.name && Array.isArray(drawing.operations)) {
-                    validDrawings[id] = {
-                        name: drawing.name,
-                        operations: [...drawing.operations]
-                    };
-                }
-            });
-            
-            const data = {
-                currentDrawingId: this.currentDrawingId,
-                drawings: validDrawings
-            };
+        });
+        console.debug('[Storage] Valid drawings:', validDrawings);
+        
+        const data = {
+            currentDrawingId: this.currentDrawingId,
+            drawings: validDrawings,
+            lastSyncTimestamp: Date.now() // Add timestamp for sync tracking
+        };
+        console.debug('[Storage] Data prepared for storage:', data);
 
-            // Only save if we have valid data
-            if (Object.keys(validDrawings).length > 0 || !this.currentDrawingId) {
-                localStorage.setItem('inkSync_drawings', JSON.stringify(data));
-                console.log('[Storage] Drawings saved:', Object.keys(validDrawings).length, 'drawings');
-            } else {
-                console.warn('[Storage] No valid drawings to save');
-            }
-        } catch (e) {
-            console.error('[Storage] Error saving drawings:', e);
-            // If saving fails, try to preserve existing storage
-            try {
-                const existing = localStorage.getItem('inkSync_drawings');
-                if (existing) {
-                    console.log('[Storage] Preserved existing drawings data');
-                }
-            } catch (err) {
-                console.error('[Storage] Could not preserve existing drawings:', err);
-            }
+        if (Object.keys(validDrawings).length > 0 || !this.currentDrawingId) {
+            localStorage.setItem('inkSync_drawings', JSON.stringify(data));
+            console.debug('[Storage] Data saved to localStorage.');
+        } else {
+            console.warn('[Storage] No valid drawings to save.');
         }
     }
 
@@ -485,11 +505,12 @@ class DrawingApp {
      * Restores drawing state from localStorage
      */
     loadFromLocalStorage() {
-        try {
-            const saved = localStorage.getItem('inkSync_drawings');
-            if (saved) {
-                const data = JSON.parse(saved);
-                
+        console.debug('[Storage] loadFromLocalStorage called.');
+        const storedData = localStorage.getItem('inkSync_drawings');
+        if (storedData) {
+            console.debug('[Storage] Data retrieved from localStorage:', storedData);
+            try {
+                const data = JSON.parse(storedData);
                 // First, validate the data structure
                 if (!data.drawings || typeof data.drawings !== 'object') {
                     console.error('[Storage] Invalid drawings data structure');
@@ -506,6 +527,7 @@ class DrawingApp {
                         };
                     }
                 });
+                console.debug('[Storage] Drawings loaded:', this.drawings);
 
                 // Then set the current drawing ID and load its state
                 this.currentDrawingId = data.currentDrawingId;
@@ -526,14 +548,12 @@ class DrawingApp {
                 this.updateDrawingNameDisplay();
                 this.updateUndoRedoButtons();
                 
-                console.log('[Storage] Drawings loaded:', Object.keys(this.drawings).length, 'drawings');
+                console.debug('[Storage] Drawings restored:', data);
+            } catch (error) {
+                console.error('[Storage] Error parsing stored data:', error);
             }
-        } catch (e) {
-            console.error('[Storage] Error loading drawings:', e);
-            // Reset state on error
-            this.currentDrawingId = null;
-            this.drawingOperations = [];
-            this.drawings = {};
+        } else {
+            console.debug('[Storage] No data found in localStorage.');
         }
     }
 
