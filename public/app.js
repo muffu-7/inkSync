@@ -23,9 +23,9 @@ class DrawingApp {
         this.currentPenColor = '#000000'; // Default pen color
 
         this.setupComponents();
+        this.setupDrawingNameDisplay();
         this.loadFromLocalStorage();
         this.setupEventListeners();
-        this.setupDrawingNameDisplay();
         
         // Mark as initialized after all setup is complete
         this.isInitialized = true;
